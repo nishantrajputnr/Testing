@@ -10,6 +10,7 @@ from enum import Enum
 from kivy.core.window import Window
 from kivy.graphics import Rectangle
 from kivy.uix.image import AsyncImage
+import math
 
 
 class GameConstants(Enum):
@@ -19,6 +20,68 @@ class GameConstants(Enum):
     HARD = "HARD"
     BACKGROUND_IMAGE = "background.jpg"
     LIFE_IMAGE = "heart.png"
+    LEVEL_CHANGE = 6
+
+
+class GameConfig:
+    LEVEL_CONFIG = {
+        1: {
+            "score_increment": 1,
+            "operators": ["+"],
+            "operands": 2,
+            "level_range_lower": 1,
+            "level_range_upper": 6,
+        },
+        2: {
+            "score_increment": 2,
+            "operators": ["+", "-"],
+            "operands": 2,
+            "level_range_lower": 4,
+            "level_range_upper": 12,
+        },
+        3: {
+            "score_increment": 4,
+            "operators": ["+", "-"],
+            "operands": 3,
+            "level_range_lower": -10,
+            "level_range_upper": 20,
+        },
+        4: {
+            "score_increment": 16,
+            "operators": ["+", "-"],
+            "operands": 3,
+            "level_range_lower": -20,
+            "level_range_upper": 70,
+        },
+        5: {
+            "score_increment": 32,
+            "operators": ["+", "-"],
+            "operands": 3,
+            "level_range_lower": -200,
+            "level_range_upper": 400,
+        },
+        6: {
+            "score_increment": 64,
+            "operators": ["+", "-", "*"],
+            "operands": randint(3, 4),
+            "level_range_lower": -10,
+            "level_range_upper": 20,
+        },
+        7: {
+            "score_increment": 128,
+            "operators": ["+", "-", "*"],
+            "operands": 4,
+            "level_range_lower": -30,
+            "level_range_upper": 80,
+        },
+        8: {
+            "score_increment": 256,
+            "operators": ["+", "-", "*"],
+            "operands": 5,
+            "level_range_lower": -40,
+            "level_range_upper": 120,
+        },
+    }
 
 
 class MCQGame(BoxLayout):
@@ -29,11 +92,17 @@ class MCQGame(BoxLayout):
             spacing=10,
             **kwargs,
         )
-        self.operators = ["+", "-", "*"]
+        self.level = 1
         self.incorrect_sound = SoundLoader.load("error.mp3")
         self.correct_sound = SoundLoader.load("success.mp3")
         self.max_lives = GameConstants.MAX_LIFE.value
+        self.score = 0
+        self.rounds_played = 0
         self.start_game()
+
+    def update_score(self):
+        self.score += GameConfig().LEVEL_CONFIG.get(self.level).get("score_increment")
+        self.score_label.text = f"Score: {self.score}"
 
     def update_lives_display(self):
         self.lives_layout.clear_widgets()
@@ -50,6 +119,15 @@ class MCQGame(BoxLayout):
                 pos=self.pos,
                 size=Window.size,
             )
+
+        self.score_label = Label(
+            text="Score: 0",
+            font_size="28sp",
+            size_hint=(1, 0.2),
+            color=(0, 0, 0.2, 1),
+            bold=True,
+        )
+        self.add_widget(self.score_label)
 
         # Question Label
         self.question_label = Label(
@@ -79,20 +157,35 @@ class MCQGame(BoxLayout):
         self.next_question(None)
 
     def generate_random_equation(self):
-        operators = ["+", "-", "*"]
-        operands = list(range(1, 11))
+        operators = GameConfig().LEVEL_CONFIG.get(self.level).get("operators")
+
+        level_range_lower = (
+            GameConfig().LEVEL_CONFIG.get(self.level).get("level_range_lower")
+        )
+        level_range_upper = (
+            GameConfig().LEVEL_CONFIG.get(self.level).get("level_range_upper")
+        )
+        operands = list(range(level_range_lower, level_range_upper))
 
         def generate_operand():
             return str(random.choice(operands))
 
-        num_operands = random.randint(2, 4)
+        num_operands = GameConfig().LEVEL_CONFIG.get(self.level).get("operands")
         equation = generate_operand()
 
         for _ in range(num_operands - 1):
             operator = random.choice(operators)
             operand = generate_operand()
-            equation += f" {operator} {operand}"
 
+            if int(operand) < 0 and operator == "-":
+                equation += f" + {-int(operand)}"
+            elif int(operand) < 0 and operator == "+":
+                equation += f" {operand}"
+            else:
+                equation += f" {operator} {operand}"
+
+        if "*" in operators and "*" not in equation:
+            return self.generate_random_equation()
         return equation
 
     def solve_equation(self, expression):
@@ -113,6 +206,11 @@ class MCQGame(BoxLayout):
         shuffle(options)
         return options
 
+    def update_level(self):
+        self.level = int(
+            math.ceil(self.rounds_played / GameConstants.LEVEL_CHANGE.value)
+        )
+
     def next_question(self, instance):
         if self.current_lives <= 0:
             # Restart Button
@@ -125,7 +223,7 @@ class MCQGame(BoxLayout):
                 font_size="18sp",
             )
             self.add_widget(self.restart_button)
-            self.result_label.text = "Game Over. Lives exhausted."
+            self.result_label.text = "Game Over"
             self.restart_button.text = "Restart Game"
             self.restart_button.bind(on_press=self.restart_game)
             self.restart_button.background_color = (
@@ -168,6 +266,7 @@ class MCQGame(BoxLayout):
             self.result_label.text = "Correct! Well done!"
             if self.correct_sound:
                 self.correct_sound.play()
+            self.update_score()
         else:
             if self.incorrect_sound:
                 self.incorrect_sound.play()
@@ -176,8 +275,10 @@ class MCQGame(BoxLayout):
 
         self.update_lives_display()
 
-        # Continue to the next question
         self.next_question(None)
+        self.rounds_played += 1
+        self.update_level()
+        print(self.level)
 
     def restart_game(self, instance):
         MCQGameApp().run()
